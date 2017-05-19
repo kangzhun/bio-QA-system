@@ -25,7 +25,7 @@ def train_embedding(model_path, corpus_path, dimension, window, min_count):
 
 
 def get_similarity(model_path, word):
-    #
+    # 获取相似单词
     model = word2vec.Word2Vec.load(model_path)
     similar_list = model.similar_by_word(word, topn=50)
     for (simi_word, simi_score) in similar_list:
@@ -34,14 +34,16 @@ def get_similarity(model_path, word):
 
 if __name__ == '__main__':
     # 训练词向量
-    # str_time = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
-    # corpus_path = os.path.join(HERE, "data/corpus/seg_biology_book.txt")
-    # dimension = 100
-    # window = 8
-    # min_count = 0
-    # model_path = os.path.join(HERE, "data/word_embedding/w2v_%s_dim_%s.vec" % (str_time, dimension))
-    # train_embedding(model_path, corpus_path, dimension, window, min_count)
+    str_time = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
+    corpus_path = os.path.join(HERE, "data/corpus/seg_biology_book.txt")
+    dimension = 300
+    window = 8
+    min_count = 0
+    model_path = os.path.join(HERE, "data/word_embedding/w2v_%s_dim_%s.vec" % (str_time, dimension))
+    train_embedding(model_path, corpus_path, dimension, window, min_count)
 
     # 加载词向量并测试
     model_path = os.path.join(HERE, "data/word_embedding/w2v_2017-05-02_18:06:22_dim_100.vec")
+
+    # 获取相似单词
     get_similarity(model_path, u"生物")
