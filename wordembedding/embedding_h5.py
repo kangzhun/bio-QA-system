@@ -8,8 +8,6 @@ from gensim.models import word2vec
 
 from config import HERE
 
-FUNCTION_WORDS = ['PADDING', 'OOV_WORD']
-
 
 def export_data_h5(vocabulary, embedding_matrix, output='embedding.h5'):
     # 将gensim词向量转存为hdf5格式
@@ -42,7 +40,12 @@ def glove_export(embedding_file):
 
 
 def w2v_export(embedding_file):
-    model = word2vec.Word2Vec.load(embedding_file)
+    # 加载gensim词向量文件，并保存为h5格式
+    try:
+        model = word2vec.Word2Vec.load(embedding_file)
+    except Exception, e:
+        print e
+        model = word2vec.Word2Vec.load_word2vec_format(embedding_file)
     vocabulary = model.wv.vocab.keys()
     embeddings = []
     for word in vocabulary:
