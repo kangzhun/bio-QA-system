@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
+import json
+
 from py2neo import authenticate, Graph
 from pymongo import MongoClient
 
 from config import NEO4J_HOST_PORT, NEO4J_USER, NEO4J_PWD, NEO4J_URL, MONGODB_HOST, MONGODB_PORT, MONGODB_DBNAME, \
     MONGODB_BIOLOGY_PROPERTY
 from const import BIO_CYPER_TEMPLATE
+from utils import str2unicode
 from utils.logger import BaseLogger
 
 
@@ -18,26 +21,31 @@ class BioKnowledgeDB(BaseLogger):
         self.property_collection = db.get_collection(MONGODB_BIOLOGY_PROPERTY)
 
     def search_node_info(self, name, **kwargs):
-        data = None
-        node_property = kwargs.get('node_property', '')
+        docs = {}
         self.debug('>>> start search_node_info <<<')
-        self.debug('search node name=%s, property=%s', name, node_property)
+        node_property = kwargs.get('node_property', '')
+        self.debug('search node with name=%s, property=%s', name, node_property)
         if name and node_property:
-            condition = BIO_CYPER_TEMPLATE['node_property'] % (name, node_property)
+            condition = BIO_CYPER_TEMPLATE['node_property'] % (str2unicode(name), node_property)
+            self.debug('condition=%s', condition)
             data = self.graph.run(condition).data()
-            self.debug('got property_value=%s', data)
-            if not data:
-                self.debug('search equal node name=%s, property=%s', name, node_property)
-                condition = BIO_CYPER_TEMPLATE['equal_node_property'] % (name, node_property)
+            docs = self._extract_answer(data)
+            if docs:
+                self.debug('got node=%s, answer=%s', name, json.dumps(docs))
+            else:
+                self.debug('search equal_node name=%s, property=%s', name, node_property)
+                condition = BIO_CYPER_TEMPLATE['equal_node_property'] % (str2unicode(name), node_property)
+                self.debug('condition=%s', condition)
                 data = self.graph.run(condition).data()
-                self.debug('got property_value=%s', data)
+                docs = self._extract_answer(data)
+                self.debug('got equal_node=%s, answer=%s', name, json.dumps(docs))
         else:
-            self.warn('@@@@@@@@@@@@@@ unexpected value!!!!!!')
+            self.warn('@@@@@@@@@@@@@@ unexpected name=%s, property=%s', name, node_property)
         self.debug('>>> end search_node_info <<<')
-        return data
+        return docs
 
-    def return_neighbors_info(self, name, relationship, **kwargs):
-        data = None
+    def search_neighbors_info(self, name, relationship, **kwargs):
+        docs = {}
         node_property = kwargs.get('node_property', '')
         if node_property:
             self.debug('search node name=%s, relationship=%s, property=%s',
@@ -47,36 +55,65 @@ class BioKnowledgeDB(BaseLogger):
         if name:
             if node_property:
                 condition = BIO_CYPER_TEMPLATE['neighbors_property'] % \
-                            (name, relationship, node_property)
+                            (str2unicode(name), relationship, node_property)
             else:
                 condition = BIO_CYPER_TEMPLATE['neighbors_data'] % \
-                            (name, relationship)
+                            (str2unicode(name), relationship)
+            self.debug('condition=%s', condition)
             data = self.graph.run(condition).data()
-            self.debug('got neighbors_info=%s', data)
+            docs = self._extract_answer(data)
+            self.debug('got name=%s, answer=%s', name, json.dumps(docs))
         else:
-            self.warn('@@@@@@@@@@@@@@ unexpected name is None')
-        return data
+            self.warn('@@@@@@@@@@@@@@ name is None')
+        return docs
+
+    def _extract_answer(self, docs):
+        ret = {}
+        if docs:
+            self.debug('docs=%s', json.dumps(docs, ensure_ascii=False))
+            for doc in docs:
+                for key in doc.keys():
+                    value = doc[key]
+                    if key not in ret.keys():
+                        if value:
+                            self.debug('key=%s, value=%s', key, json.dumps(value))
+                            if isinstance(value, list):
+                                ret[key] = value
+                            else:
+                                ret[key] = [value]
+                        else:
+                            self.warn('@@@@@@@@@@@@@@@@@@@@@@@ key=%s, value=None')
+                    else:
+                        if value:
+                            self.debug('key=%s, value=%s', key, json.dumps(value))
+                            if isinstance(value, list):
+                                ret[key].extend(value)
+                            else:
+                                ret[key].append(value)
+                        else:
+                            self.warn('@@@@@@@@@@@@@@@@@@@@@@@ key=%s, value=None')
+        else:
+            self.warn('@@@@@@@@@@@@@@@@@@@@@@@ docs=None')
+        return ret
 
     def search(self, subject, predicate):
-        ret = ''
+        answer = {}
         predicate_doc = self.property_collection.find_one({'uri': predicate})
-        if predicate_doc:
+        if predicate_doc:  # 谓语存在则进行查询
             predicate_type = predicate_doc.get('type', '')
             self.debug('predicate_type=%s', predicate_type)
-            if predicate_type == 'data_relationship':
-                ret = self.search_node_info(subject, node_property=predicate)
-            elif predicate_type == 'object_relationship':
-                ret = self.return_neighbors_info(subject, predicate, node_property='name')
+            if predicate_type == 'data_relationship':  # 谓语属于数据关系
+                answer = self.search_node_info(subject, node_property=predicate)
+            elif predicate_type == 'object_relationship':  # 谓语属于对象关系
+                answer = self.search_neighbors_info(subject, predicate, node_property='name')
             else:
-                self.warn('@@@@@@@@@@@@@@@@@@@@@@@@ unexpected predicate_type is None')
+                self.warn('@@@@@@@@@@@@@@@@@@@@@@@@ predicate_type is None')
         else:
-            self.warn('@@@@@@@@@@@@@@@@@@@@ unexpected predicate=%s', predicate)
-        if ret:
-            ret = " ".join([item.values()[0] for item in ret])
-        return ret
+            self.warn('@@@@@@@@@@@@@@@@@@@@ Do not have such predicate=%s', predicate)
+        return answer
 
 
 if __name__ == '__main__':
     knowledge_db = BioKnowledgeDB()
-    ret = knowledge_db.search('桃花', 'common_consistedOf')
-    print ret
+    _ret = knowledge_db.search('桃花', 'common_consistedOf')
+    print _ret
